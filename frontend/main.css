@@ -1,0 +1,177 @@
+/* Base Styles */
+        body {
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+        
+        /* Grid Background Pattern */
+        .bg-grid-white\/5 {
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        
+        .phone-mockup-enhanced {
+        position: relative;
+        width: 100%;
+        max-width: 320px;
+        height: 640px;
+        margin: 0 auto;
+    }
+    
+    .phone-frame-enhanced {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background: #0f172a;
+        border-radius: 40px;
+        border: 12px solid #020617;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .phone-screen-enhanced {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        right: 20px;
+        bottom: 20px;
+        overflow: hidden;
+        border-radius: 30px;
+    }
+    
+    .feature-card-enhanced {
+        display: flex;
+        gap: 1.5rem;
+        align-items: flex-start;
+        padding: 2rem;
+        background: rgba(15, 23, 42, 0.6);
+        border-radius: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.4s ease;
+    }
+    
+    .feature-card-enhanced:hover {
+        background: rgba(15, 23, 42, 0.9);
+        border-color: rgba(59, 130, 246, 0.3);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+    }
+    
+    .icon-box-enhanced {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 4rem;
+        height: 4rem;
+        border-radius: 1rem;
+        font-size: 1.5rem;
+        transition: all 0.3s ease;
+    }
+        
+        /* Custom Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 1s ease forwards;
+        }
+        
+        .animate-delay-100 {
+            animation-delay: 0.1s;
+        }
+        
+        .animate-delay-200 {
+            animation-delay: 0.2s;
+        }
+        
+        /* Cursor */
+        #cursor {
+            transition: transform 0.15s ease;
+            z-index: 9999;
+        }
+        
+        /* Prose Styles */
+        .prose-invert a {
+            color: #3b82f6;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+        
+        .prose-invert a:hover {
+            color: #60a5fa;
+        }
+        
+        .prose-invert ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        
+        .prose-invert li {
+            position: relative;
+            padding-left: 1.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .prose-invert li:before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.75rem;
+            width: 0.5rem;
+            height: 0.5rem;
+            background-color: #3b82f6;
+            border-radius: 50%;
+        }
+        
+        /* Stats Grid */
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            .phone-mockup {
+                width: 250px;
+                height: 500px;
+            }
+            
+            .feature-card {
+                flex-direction: column;
+                text-align: center;
+                align-items: center;
+            }
+            
+            .icon-box {
+                margin-bottom: 1rem;
+            }
+            
+            .hero-heading {
+                font-size: 3.5rem;
+                line-height: 1;
+            }
+        }
+    
+    @media (max-width: 768px) {
+        .phone-mockup-enhanced {
+            height: 580px;
+            max-width: 280px;
+        }
+        
+        .feature-card-enhanced {
+            flex-direction: column;
+            text-align: center;
+            align-items: center;
+        }
+        
+        .icon-box-enhanced {
+            margin-bottom: 1.5rem;
+        }
+    }
