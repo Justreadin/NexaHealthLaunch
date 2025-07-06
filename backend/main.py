@@ -1,31 +1,53 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
 import firebase_admin
 from typing import Optional
 from firebase_admin import credentials, firestore
 import os
 import json
 from dotenv import load_dotenv
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
-# Get Firebase key from environment variables
-firebase_key_json = os.getenv("Firebase_key")
+def initialize_firebase():
+    try:
+        # Get Firebase key from environment variables
+        firebase_key_json = os.getenv("FIREBASE_KEY")
+        
+        if not firebase_key_json:
+            raise ValueError("FIREBASE_KEY not found in environment variables")
+        
+        logger.info("FIREBASE_KEY found in environment variables")
+        
+        # Clean and parse the JSON
+        firebase_key_json = firebase_key_json.strip().replace('\n', '\\n')
+        firebase_key = json.loads(firebase_key_json)
+        
+        # Initialize Firebase
+        cred = credentials.Certificate(firebase_key)
+        firebase_admin.initialize_app(cred)
+        return firestore.client()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse FIREBASE_KEY: {e}")
+        logger.error(f"Key content: {firebase_key_json[:100]}...")  # Log first 100 chars
+        raise
+    except Exception as e:
+        logger.error(f"Firebase initialization failed: {e}")
+        raise
 
-# Initialize Firebase using the key from .env
-if not firebase_key_json:
-    raise ValueError("Firebase_key not found in environment variables")
-
-# Parse the JSON string from the environment variable
-firebase_key = json.loads(firebase_key_json)
-
-# Initialize Firebase with the credentials
-cred = credentials.Certificate(firebase_key)
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+try:
+    db = initialize_firebase()
+    logger.info("Firebase initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Firebase: {e}")
+    raise
 
 app = FastAPI()
 
@@ -38,7 +60,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:8000",
         "http://localhost:5500",
-        "http://127.0.0.1:5500"
+        "http://127.0.0.1:5500",
+        "https://nexa-health-launch.onrender.com"  # Add your Render URL
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -51,37 +74,32 @@ class Submission(BaseModel):
     interest: str
     timestamp: Optional[str] = None
 
-
 @app.get("/")
 @app.head("/")
 async def root():
     return {"message": "NexaHealth_landing page - Your AI Health Companion"}
 
-
 @app.post("/api/submissions")
 async def create_submission(submission: Submission):
     try:
-        # Add to Firestore
         doc_ref = db.collection("submissions").document()
         doc_ref.set({
             "name": submission.name,
             "email": submission.email,
             "interest": submission.interest,
-            "timestamp": submission.timestamp,
+            "timestamp": submission.timestamp or datetime.now().isoformat(),
             "status": "pending"
         })
-        
         return {"message": "Submission received successfully", "id": doc_ref.id}
     except Exception as e:
+        logger.error(f"Submission failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/submissions")
 async def get_submissions():
     try:
         docs = db.collection("submissions").stream()
-        submissions = []
-        for doc in docs:
-            submissions.append(doc.to_dict())
-        return submissions
+        return [doc.to_dict() for doc in docs]
     except Exception as e:
+        logger.error(f"Failed to get submissions: {e}")
         raise HTTPException(status_code=400, detail=str(e))
