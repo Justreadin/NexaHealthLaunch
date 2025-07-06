@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import firebase_admin
@@ -8,33 +8,40 @@ import os
 import json
 from dotenv import load_dotenv
 from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Firebase with environment variables
 def initialize_firebase():
-    # Get all required Firebase config from environment variables
-    firebase_config = {
-        "type": os.getenv("FIREBASE_TYPE"),
-        "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-        "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-        "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
-        "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-        "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-        "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
-        "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
-        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
-        "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL"),
-        "universe_domain": os.getenv("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
-    }
-    
-    # Validate we have all required fields
-    for key, value in firebase_config.items():
-        if not value and key != "universe_domain":  # universe_domain has default
-            raise ValueError(f"Missing Firebase config: {key}")
+    try:
+        firebase_config = {
+            "type": os.getenv("FIREBASE_TYPE"),
+            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
+            "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL"),
+            "universe_domain": os.getenv("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
+        }
+        
+        # Validate config
+        for key, value in firebase_config.items():
+            if not value and key != "universe_domain":
+                raise ValueError(f"Missing Firebase config: {key}")
 
-    # Initialize Firebase
-    cred = credentials.Certificate(firebase_config)
-    firebase_admin.initialize_app(cred)
-    return firestore.client()
+        cred = credentials.Certificate(firebase_config)
+        firebase_admin.initialize_app(cred)
+        return firestore.client()
+    except Exception as e:
+        logger.error(f"Firebase initialization failed: {str(e)}")
+        raise
 
 # Load environment variables
 load_dotenv()
@@ -42,12 +49,12 @@ load_dotenv()
 try:
     db = initialize_firebase()
 except Exception as e:
-    print(f"🔥 Failed to initialize Firebase: {str(e)}")
+    logger.error(f"🔥 Critical: Failed to initialize Firebase: {str(e)}")
     raise
 
 app = FastAPI()
 
-# CORS Configuration
+# CORS Configuration - Update with your actual frontend URL
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -57,7 +64,8 @@ app.add_middleware(
         "http://localhost:8000",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
-        "https://your-render-app.onrender.com"  # Add your Render URL here
+        "https://lyrecal.onrender.com",  # Your Render URL
+        "https://your-actual-frontend-domain.com"  # Add your production frontend URL
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -75,24 +83,34 @@ async def root():
     return {"message": "NexaHealth Landing Page API"}
 
 @app.post("/api/submissions")
-async def create_submission(submission: Submission):
+async def create_submission(submission: Submission, request: Request):
     try:
+        logger.info(f"Incoming submission: {submission.dict()}")
+        logger.info(f"Headers: {request.headers}")
+        
+        # Validate email format
+        if "@" not in submission.email or "." not in submission.email:
+            raise HTTPException(status_code=400, detail="Invalid email format")
+        
         doc_ref = db.collection("submissions").document()
-        doc_ref.set({
+        doc_data = {
             "name": submission.name,
             "email": submission.email,
             "interest": submission.interest,
             "timestamp": submission.timestamp or datetime.now().isoformat(),
             "status": "pending"
-        })
-        return {"message": "Submission received", "id": doc_ref.id}
+        }
+        
+        doc_ref.set(doc_data)
+        logger.info(f"Document created with ID: {doc_ref.id}")
+        
+        return {
+            "message": "Submission received",
+            "id": doc_ref.id,
+            "data": doc_data
+        }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/api/submissions")
-async def get_submissions():
-    try:
-        docs = db.collection("submissions").stream()
-        return [doc.to_dict() for doc in docs]
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Submission error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e) if "detail" not in str(e) else str(e))

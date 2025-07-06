@@ -87,7 +87,6 @@ if (betaForm) {
     betaForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        // Get form elements
         const form = e.target;
         const formData = new FormData(form);
         const submitButton = form.querySelector('button[type="submit"]');
@@ -98,52 +97,54 @@ if (betaForm) {
         submitButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Processing...`;
         
         try {
-            // Prepare the data
+            // Prepare the data exactly matching your Submission model
             const formValues = {
-                name: formData.get('name'),
-                email: formData.get('email'),
-                interest: formData.get('interest'),
-                timestamp: new Date().toISOString()
+                name: formData.get('name').trim(),
+                email: formData.get('email').trim(),
+                interest: formData.get('interest').trim(),
+                // timestamp will be added by the backend if not provided
             };
+            
+            console.log("Submitting:", formValues);  // Debug log
             
             const response = await fetch('https://lyrecal.onrender.com/api/submissions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 },
                 body: JSON.stringify(formValues)
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
             const result = await response.json();
             
-            // Show success message
+            if (!response.ok) {
+                console.error("Backend error:", result);
+                throw new Error(result.detail || `HTTP error! status: ${response.status}`);
+            }
+            
+            console.log("Success:", result);  // Debug log
+            
             Swal.fire({
                 icon: 'success',
                 title: 'Thank you!',
-                text: 'Your submission has been received. We\'ll be in touch soon.',
+                text: result.message || 'Your submission has been received.',
                 confirmButtonColor: '#3b82f6',
             });
             
-            // Reset form
             form.reset();
             
         } catch (error) {
-            console.error('Error submitting form:', error);
+            console.error('Submission error:', error);
             
-            // Show error message
             Swal.fire({
                 icon: 'error',
                 title: 'Submission Failed',
-                text: 'There was an error submitting your form. Please try again.',
+                text: error.message || 'There was an error submitting your form.',
                 confirmButtonColor: '#3b82f6',
             });
             
         } finally {
-            // Reset button state
             submitButton.disabled = false;
             submitButton.textContent = originalButtonText;
         }
