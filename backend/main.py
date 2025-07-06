@@ -6,18 +6,28 @@ import firebase_admin
 from typing import Optional
 from firebase_admin import credentials, firestore
 import os
+import json
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Initialize Firebase - SIMPLIFIED VERSION
-cred = credentials.Certificate("firebase.json")  # or the full path to your file
+# Get Firebase key from environment variables
+firebase_key_json = os.getenv("Firebase_key")
+
+# Initialize Firebase using the key from .env
+if not firebase_key_json:
+    raise ValueError("Firebase_key not found in environment variables")
+
+# Parse the JSON string from the environment variable
+firebase_key = json.loads(firebase_key_json)
+
+# Initialize Firebase with the credentials
+cred = credentials.Certificate(firebase_key)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 app = FastAPI()
-
 
 # CORS configuration
 app.add_middleware(
@@ -33,6 +43,13 @@ class Submission(BaseModel):
     email: str
     interest: str
     timestamp: Optional[str] = None
+
+
+@app.get("/")
+@app.head("/")
+async def root():
+    return {"message": "NexaHealth_landing page - Your AI Health Companion"}
+
 
 @app.post("/api/submissions")
 async def create_submission(submission: Submission):
