@@ -9,38 +9,40 @@ import json
 from dotenv import load_dotenv
 from datetime import datetime
 
-# Initialize Firebase in a more robust way
-def init_firebase():
-    # Try to get the Firebase config from environment variables
-    firebase_config = os.getenv("FIREBASE_CONFIG")
+# Initialize Firebase with environment variables
+def initialize_firebase():
+    # Get all required Firebase config from environment variables
+    firebase_config = {
+        "type": os.getenv("FIREBASE_TYPE"),
+        "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+        "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
+        "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
+        "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
+        "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+        "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
+        "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
+        "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+        "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL"),
+        "universe_domain": os.getenv("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
+    }
     
-    if not firebase_config:
-        raise ValueError("FIREBASE_CONFIG environment variable not set")
-    
-    try:
-        # Parse the JSON config
-        config_dict = json.loads(firebase_config)
-        
-        # Initialize Firebase
-        cred = credentials.Certificate(config_dict)
-        firebase_admin.initialize_app(cred)
-        return firestore.client()
-    except json.JSONDecodeError:
-        # If JSON parsing fails, try treating it as a path to a JSON file
-        try:
-            cred = credentials.Certificate(firebase_config)
-            firebase_admin.initialize_app(cred)
-            return firestore.client()
-        except Exception as e:
-            raise ValueError(f"Invalid Firebase configuration: {str(e)}")
+    # Validate we have all required fields
+    for key, value in firebase_config.items():
+        if not value and key != "universe_domain":  # universe_domain has default
+            raise ValueError(f"Missing Firebase config: {key}")
+
+    # Initialize Firebase
+    cred = credentials.Certificate(firebase_config)
+    firebase_admin.initialize_app(cred)
+    return firestore.client()
 
 # Load environment variables
 load_dotenv()
 
 try:
-    db = init_firebase()
+    db = initialize_firebase()
 except Exception as e:
-    print(f"Failed to initialize Firebase: {str(e)}")
+    print(f"🔥 Failed to initialize Firebase: {str(e)}")
     raise
 
 app = FastAPI()
@@ -55,7 +57,7 @@ app.add_middleware(
         "http://localhost:8000",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
-        "https://your-render-app-url.onrender.com"  # Add your Render URL
+        "https://your-render-app.onrender.com"  # Add your Render URL here
     ],
     allow_credentials=True,
     allow_methods=["*"],
