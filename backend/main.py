@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import firebase_admin
 from typing import Optional
-from firebase_admin import credentials, firestore
 import os
 import json
+import base64
+import firebase_admin
+from firebase_admin import credentials, firestore, auth
+from google.auth.transport import requests
+from google.oauth2 import service_account
 from dotenv import load_dotenv
 from datetime import datetime
 import logging
@@ -14,47 +17,106 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase with environment variables
-def initialize_firebase():
-    try:
-        firebase_config = {
-            "type": os.getenv("FIREBASE_TYPE"),
-            "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-            "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
-            "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-            "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
-            "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
-            "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_CERT_URL"),
-            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL"),
-            "universe_domain": os.getenv("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
-        }
-        
-        # Validate config
-        for key, value in firebase_config.items():
-            if not value and key != "universe_domain":
-                raise ValueError(f"Missing Firebase config: {key}")
-
-        cred = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(cred)
-        return firestore.client()
-    except Exception as e:
-        logger.error(f"Firebase initialization failed: {str(e)}")
-        raise
-
 # Load environment variables
 load_dotenv()
 
+class FirebaseManager:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(FirebaseManager, cls).__new__(cls)
+            cls._instance._initialize_firebase()
+        return cls._instance
+    
+    def _initialize_firebase(self, retry_count=0):
+        """Initialize Firebase Admin SDK with error handling and retry logic"""
+        max_retries = 3
+        try:
+            # Get the base64 encoded key from environment
+            firebase_key_b64 = os.getenv("FIREBASE_KEY")
+            
+            if not firebase_key_b64:
+                raise ValueError("FIREBASE_KEY is not set in environment variables")
+
+            # Decode from base64 to JSON string
+            firebase_key_json_str = base64.b64decode(firebase_key_b64).decode('utf-8')
+            
+            # Parse JSON string into dictionary
+            firebase_config = json.loads(firebase_key_json_str)
+
+            if not firebase_admin._apps:
+                cred = credentials.Certificate(firebase_config)
+                firebase_admin.initialize_app(cred)
+                logger.info("Firebase Admin SDK initialized successfully")
+                
+            # Verify the credentials work
+            self._verify_firebase_connection()
+            
+        except Exception as e:
+            logger.error(f"Firebase initialization error (attempt {retry_count + 1}): {str(e)}")
+            if retry_count < max_retries - 1:
+                logger.info(f"Retrying Firebase initialization... ({retry_count + 1}/{max_retries})")
+                self._initialize_firebase(retry_count + 1)
+            else:
+                logger.error("Max retries reached for Firebase initialization")
+                raise
+    
+    def _verify_firebase_connection(self):
+        """Verify that Firebase connection is working"""
+        try:
+            # Try to list users as a test
+            auth.list_users(max_results=1)
+            logger.debug("Firebase connection verified successfully")
+        except Exception as e:
+            logger.error(f"Firebase connection verification failed: {str(e)}")
+            raise
+    
+    def refresh_firebase_token(self):
+        """Refresh the Firebase authentication token"""
+        try:
+            firebase_key_b64 = os.getenv("FIREBASE_KEY")
+            firebase_key_json_str = base64.b64decode(firebase_key_b64).decode('utf-8')
+            firebase_config = json.loads(firebase_key_json_str)
+            
+            creds = service_account.Credentials.from_service_account_info(
+                firebase_config,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            request = requests.Request()
+            creds.refresh(request)
+            logger.info("Firebase token refreshed successfully")
+            return creds.token
+        except Exception as e:
+            logger.error(f"Failed to refresh Firebase token: {str(e)}")
+            raise
+    
+    def get_firestore_client(self):
+        """Get Firestore client with connection verification"""
+        try:
+            self._verify_firebase_connection()
+            return firestore.client()
+        except Exception as e:
+            logger.error(f"Firestore connection error: {str(e)}")
+            try:
+                self.refresh_firebase_token()
+                return firestore.client()
+            except Exception as refresh_error:
+                logger.error(f"Failed to recover Firestore connection: {str(refresh_error)}")
+                raise
+
+# Initialize Firebase
 try:
-    db = initialize_firebase()
+    firebase_manager = FirebaseManager()
+    db = firebase_manager.get_firestore_client()
+    logger.info("Firebase initialized successfully")
 except Exception as e:
     logger.error(f"🔥 Critical: Failed to initialize Firebase: {str(e)}")
     raise
 
 app = FastAPI()
 
-# CORS Configuration - Update with your actual frontend URL
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -64,8 +126,8 @@ app.add_middleware(
         "http://localhost:8000",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
-        "https://lyrecal.onrender.com",  # Your Render URL
-        "https://your-actual-frontend-domain.com"  # Add your production frontend URL
+        "https://lyrecal.onrender.com",
+        "https://your-actual-frontend-domain.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -86,7 +148,6 @@ async def root():
 async def create_submission(submission: Submission, request: Request):
     try:
         logger.info(f"Incoming submission: {submission.dict()}")
-        logger.info(f"Headers: {request.headers}")
         
         # Validate email format
         if "@" not in submission.email or "." not in submission.email:
@@ -114,3 +175,12 @@ async def create_submission(submission: Submission, request: Request):
         raise HTTPException(
             status_code=400,
             detail=str(e) if "detail" not in str(e) else str(e))
+
+@app.get("/api/submissions")
+async def get_submissions():
+    try:
+        docs = db.collection("submissions").stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        logger.error(f"Error fetching submissions: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
