@@ -1,2 +1,4 @@
 .venv/
-firebase.json
+firebase_key.json
+firebase_n.json
+.env

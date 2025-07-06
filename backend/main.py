@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
 from datetime import datetime
 import logging
@@ -15,18 +15,18 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()  # .env files still work for local dev
+load_dotenv()               # still handy for local dev
 
 # ─────────────────────────────
-# Firebase helper
+# Firebase helper (no Auth)
 # ─────────────────────────────
 class FirebaseManager:
     """
-    Singleton wrapper around Firebase Admin SDK.
+    Singleton wrapper for Firebase Admin SDK.
     Looks for a JSON key file at:
-      1. FIREBASE_KEY_PATH          (highest priority)
+      1. FIREBASE_KEY_PATH
       2. GOOGLE_APPLICATION_CREDENTIALS
-      3. /etc/secrets/firebase_key.json   (Render’s default mount point)
+      3. /etc/secrets/firebase_key.json   (Render’s default mount path)
     """
 
     _instance = None
@@ -55,20 +55,21 @@ class FirebaseManager:
             firebase_admin.initialize_app(cred)
             logger.info("✔️  Firebase Admin SDK initialized (%s)", cred_path)
 
-        self._verify_firebase_connection()
+        self._verify_firestore()
 
     @staticmethod
-    def _verify_firebase_connection():
-        """Fail fast if the service account is wrong or revoked."""
+    def _verify_firestore():
+        """Fail fast if Firestore is unreachable or creds are wrong."""
         try:
-            next(auth.list_users(max_results=1), None)
-            logger.debug("Firebase connection verified")
+            # Lightweight call: list (at most) one collection
+            next(iter(firestore.client().collections()), None)
+            logger.debug("Firestore connection verified")
         except Exception as exc:
-            logger.error("❌ Firebase connection failed: %s", exc)
+            logger.error("❌ Firestore verification failed: %s", exc)
             raise
 
     def get_firestore_client(self):
-        self._verify_firebase_connection()
+        self._verify_firestore()
         return firestore.client()
 
 
@@ -80,7 +81,7 @@ try:
     db = firebase_manager.get_firestore_client()
 except Exception as exc:
     logger.critical("🔥 Could not start because Firebase failed: %s", exc)
-    raise  # Crash fast so Render shows the real error
+    raise
 
 # ─────────────────────────────
 # FastAPI setup
@@ -104,7 +105,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ─────────────────────────────
 # Pydantic models
 # ─────────────────────────────
@@ -114,7 +114,6 @@ class Submission(BaseModel):
     interest: str
     timestamp: Optional[str] = None
 
-
 # ─────────────────────────────
 # Routes
 # ─────────────────────────────
@@ -122,13 +121,12 @@ class Submission(BaseModel):
 async def root():
     return {"message": "NexaHealth Landing Page API"}
 
-
 @app.post("/api/submissions")
 async def create_submission(submission: Submission, request: Request):
     try:
         logger.info("Incoming submission: %s", submission.dict())
 
-        # Very quick e-mail sanity check
+        # quick e-mail sanity check
         if "@" not in submission.email or "." not in submission.email:
             raise HTTPException(status_code=400, detail="Invalid email format")
 
@@ -149,7 +147,6 @@ async def create_submission(submission: Submission, request: Request):
     except Exception as exc:
         logger.error("Submission error: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
-
 
 @app.get("/api/submissions")
 async def get_submissions():
